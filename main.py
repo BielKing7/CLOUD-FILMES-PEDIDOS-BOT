@@ -21,20 +21,29 @@ MEU_ID = '6032657635'
 
 bot = telebot.TeleBot(TOKEN)
 
+# --- COMANDO START ---
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    texto_start = (
+        "Olá! Bem-vindo ao Bot de Pedidos do CLOUD FILMES\n\n"
+        "Para solicitar o um conteúdo para o ser adicionado no app CLOUD FILMES "
+        "basta usar o comando /pedido nome do Filme ou Série\n\n"
+        "Exemplo: `/pedido Homem-Aranha (2002)` ou `/pedido Stranger Things`"
+    )
+    bot.reply_to(message, texto_start, parse_mode="Markdown")
+
+# --- COMANDO PEDIDO ---
 @bot.message_handler(commands=['pedido'])
 def fazer_pedido(message):
-    # Pega o que o usuário digitou após o comando
     entrada = message.text.replace('/pedido', '').strip()
     
     if entrada:
-        # Busca multi (filmes e séries ao mesmo tempo)
         url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_KEY}&query={entrada}&language=pt-BR"
         try:
             res = requests.get(url).json()
             if res.get('results'):
                 item = res['results'][0]
                 
-                # Identifica se é Filme ou Série para pegar os dados corretos
                 tipo_media = item.get('media_type')
                 if tipo_media == 'movie':
                     titulo = item.get('title')
@@ -45,11 +54,11 @@ def fazer_pedido(message):
                     ano = (item.get('first_air_date') or "----")[:4]
                     tipo_str = "📺 Série"
                 else:
-                    return # Ignora resultados que não sejam filmes/séries
+                    return
 
                 sinopse = item.get('overview', 'Sem sinopse disponível.')
                 
-                # 1. Resposta educativa para o usuário no grupo (Focando no APP)
+                # 1. Resposta no grupo (Focando no APP)
                 texto_confirmacao = (
                     f"✅ **Pedido Recebido!**\n\n"
                     f"{tipo_str}: **{titulo} ({ano})**\n"
@@ -58,7 +67,7 @@ def fazer_pedido(message):
                 )
                 msg_bot = bot.reply_to(message, texto_confirmacao, parse_mode="Markdown")
                 
-                # 2. Detalhes técnicos para o seu PRIVADO (Com Sinopse para facilitar sua vida)
+                # 2. Detalhes para o seu PRIVADO
                 texto_privado = (
                     f"🍿 **SOLICITAÇÃO PARA O APP**\n\n"
                     f"🗂️ **Tipo:** {tipo_str}\n"
@@ -70,15 +79,15 @@ def fazer_pedido(message):
                 )
                 bot.send_message(MEU_ID, texto_privado, parse_mode="Markdown")
 
-                # 3. Limpeza automática após 30 segundos
+                # 3. Limpeza automática
                 time.sleep(30)
                 try:
-                    bot.delete_message(message.chat.id, message.message_id) # Apaga o comando do usuário
-                    bot.delete_message(message.chat.id, msg_bot.message_id) # Apaga a resposta do bot
+                    bot.delete_message(message.chat.id, message.message_id)
+                    bot.delete_message(message.chat.id, msg_bot.message_id)
                 except:
                     pass
             else:
-                msg_erro = bot.reply_to(message, "❌ Título não encontrado. Verifique se o nome e o ano estão corretos.")
+                msg_erro = bot.reply_to(message, "❌ Título não encontrado. Tente nome + ano.")
                 time.sleep(10)
                 try:
                     bot.delete_message(message.chat.id, message.message_id)
@@ -87,17 +96,15 @@ def fazer_pedido(message):
         except:
             pass
     else:
-        # Se o usuário digitar apenas /pedido
-        msg_help = bot.reply_to(message, "💡 **Como pedir:**\nDigite `/pedido` seguido do nome e ano.\nEx: `/pedido Homem-Aranha (2002)`", parse_mode="Markdown")
+        msg_help = bot.reply_to(message, "💡 **Como pedir:**\nUse `/pedido` nome e ano.\nEx: `/pedido Batman (2022)`")
         time.sleep(15)
         try:
             bot.delete_message(message.chat.id, message.message_id)
             bot.delete_message(message.chat.id, msg_help.message_id)
-        except:
-            pass
+        except: pass
 
 if __name__ == "__main__":
     t = Thread(target=run)
     t.start()
     bot.infinity_polling()
-            
+                
