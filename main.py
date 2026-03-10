@@ -1,69 +1,103 @@
 import os
 import telebot
 import requests
+import time
 from flask import Flask
 from threading import Thread
 
-# --- PARTE 1: SERVIDOR WEB PARA MANTER O BOT VIVO ---
+# --- SERVIDOR WEB ---
 app = Flask('')
-
 @app.route('/')
-def home():
-    return "Bot CLOUD FILMES está online 24h!"
+def home(): return "Bot de Pedidos Cloud Filmes Online!"
 
 def run():
-    # O Render exige que o bot escute em uma porta específica
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
 
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# --- PARTE 2: CONFIGURAÇÃO DO BOT DE PEDIDOS ---
-# Substitua as informações abaixo entre as aspas:
+# --- CONFIGURAÇÃO ---
 TOKEN = '8692317223:AAFE76kBVYKkt85qv1wyR_deawLBnShwT0Q'
 TMDB_KEY = 'a169d710b2eca204f9db290256828d05'
-MEU_ID = '6032657635' 
+MEU_ID = '6032657635'
 
 bot = telebot.TeleBot(TOKEN)
 
-@bot.message_handler(commands=['start'])
-def boas_vindas(message):
-    bot.reply_to(message, "Olá! Sou o assistente de pedidos do CLOUD FILMES.\n\nPara pedir um filme ou série, use o comando:\n`/pedido Nome do Filme`", parse_mode="Markdown")
-
 @bot.message_handler(commands=['pedido'])
 def fazer_pedido(message):
-    nome_filme = message.text.replace('/pedido', '').strip()
+    # Pega o que o usuário digitou após o comando
+    entrada = message.text.replace('/pedido', '').strip()
     
-    if not nome_filme:
-        bot.reply_to(message, "Por favor, digite o nome do filme. Exemplo: `/pedido Matrix`", parse_mode="Markdown")
-        return
+    if entrada:
+        # Busca multi (filmes e séries ao mesmo tempo)
+        url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_KEY}&query={entrada}&language=pt-BR"
+        try:
+            res = requests.get(url).json()
+            if res.get('results'):
+                item = res['results'][0]
+                
+                # Identifica se é Filme ou Série para pegar os dados corretos
+                tipo_media = item.get('media_type')
+                if tipo_media == 'movie':
+                    titulo = item.get('title')
+                    ano = (item.get('release_date') or "----")[:4]
+                    tipo_str = "🎬 Filme"
+                elif tipo_media == 'tv':
+                    titulo = item.get('name')
+                    ano = (item.get('first_air_date') or "----")[:4]
+                    tipo_str = "📺 Série"
+                else:
+                    return # Ignora resultados que não sejam filmes/séries
 
-    # Busca no catálogo do TMDB
-    url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_KEY}&query={nome_filme}&language=pt-BR"
-    
-    try:
-        res = requests.get(url).json()
-        if res.get('results'):
-            item = res['results'][0]
-            titulo = item.get('title') or item.get('name')
-            tipo = "Filme" if item.get('media_type') == 'movie' else "Série"
-            ano = (item.get('release_date') or item.get('first_air_date') or "0000")[:4]
+                sinopse = item.get('overview', 'Sem sinopse disponível.')
+                
+                # 1. Resposta educativa para o usuário no grupo (Focando no APP)
+                texto_confirmacao = (
+                    f"✅ **Pedido Recebido!**\n\n"
+                    f"{tipo_str}: **{titulo} ({ano})**\n"
+                    f"🚀 Nossa equipe foi notificada e em breve este conteúdo será adicionado ao **App CLOUD FILMES**!\n\n"
+                    f"⚠️ *Esta mensagem será apagada em 30s para manter o tópico limpo.*"
+                )
+                msg_bot = bot.reply_to(message, texto_confirmacao, parse_mode="Markdown")
+                
+                # 2. Detalhes técnicos para o seu PRIVADO (Com Sinopse para facilitar sua vida)
+                texto_privado = (
+                    f"🍿 **SOLICITAÇÃO PARA O APP**\n\n"
+                    f"🗂️ **Tipo:** {tipo_str}\n"
+                    f"📌 **Título:** {titulo}\n"
+                    f"📅 **Ano:** {ano}\n"
+                    f"📝 **Sinopse:** {sinopse}\n\n"
+                    f"👤 **User:** @{message.from_user.username or 'Sem Username'}\n"
+                    f"🆔 **ID:** `{message.from_user.id}`"
+                )
+                bot.send_message(MEU_ID, texto_privado, parse_mode="Markdown")
 
-            # Resposta para o usuário no grupo
-            bot.reply_to(message, f"✅ **Pedido Recebido!**\n\n🎬 **{tipo}:** {titulo}\n📅 **Ano:** {ano}\n\nO administrador já foi notificado e verificará a disponibilidade em breve.", parse_mode="Markdown")
-            
-            # Envio do pedido para o seu privado (Dono)
-            bot.send_message(MEU_ID, f"🍿 **NOVO PEDIDO NO CLOUD FILMES**\n\n📌 **Tipo:** {tipo}\n🎬 **Título:** {titulo}\n📅 **Lançamento:** {ano}\n👤 **Solicitado por:** @{message.from_user.username or 'Sem Username'}\n🆔 **ID do User:** `{message.from_user.id}`", parse_mode="Markdown")
-        else:
-            bot.reply_to(message, "❌ Não encontrei esse título no TMDB. Verifique se o nome está correto.")
-    except Exception as e:
-        bot.reply_to(message, "⚠️ Ocorreu um erro ao processar seu pedido. Tente novamente mais tarde.")
+                # 3. Limpeza automática após 30 segundos
+                time.sleep(30)
+                try:
+                    bot.delete_message(message.chat.id, message.message_id) # Apaga o comando do usuário
+                    bot.delete_message(message.chat.id, msg_bot.message_id) # Apaga a resposta do bot
+                except:
+                    pass
+            else:
+                msg_erro = bot.reply_to(message, "❌ Título não encontrado. Verifique se o nome e o ano estão corretos.")
+                time.sleep(10)
+                try:
+                    bot.delete_message(message.chat.id, message.message_id)
+                    bot.delete_message(message.chat.id, msg_erro.message_id)
+                except: pass
+        except:
+            pass
+    else:
+        # Se o usuário digitar apenas /pedido
+        msg_help = bot.reply_to(message, "💡 **Como pedir:**\nDigite `/pedido` seguido do nome e ano.\nEx: `/pedido Homem-Aranha (2002)`", parse_mode="Markdown")
+        time.sleep(15)
+        try:
+            bot.delete_message(message.chat.id, message.message_id)
+            bot.delete_message(message.chat.id, msg_help.message_id)
+        except:
+            pass
 
-# --- PARTE 3: INICIALIZAÇÃO ---
 if __name__ == "__main__":
-    keep_alive() # Inicia o servidor Flask em paralelo
-    print("Bot iniciado com sucesso!")
-    bot.infinity_polling() # Mantém o bot verificando mensagens
-  
+    t = Thread(target=run)
+    t.start()
+    bot.infinity_polling()
+            
