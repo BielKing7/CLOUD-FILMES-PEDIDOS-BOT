@@ -2,14 +2,14 @@ import os
 import telebot
 import requests
 import time
-import re
+from telebot import types
 from flask import Flask
 from threading import Thread
 
 # --- SERVIDOR WEB ---
 app = Flask('')
 @app.route('/')
-def home(): return "Bot Cloud Filmes Online!"
+def home(): return "Bot Cloud Filmes Inline Ativo!"
 
 def run():
     port = int(os.environ.get('PORT', 8080))
@@ -22,117 +22,74 @@ MEU_ID = '6032657635'
 
 bot = telebot.TeleBot(TOKEN)
 
-# --- COMANDO START (ADICIONADO) ---
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    texto_start = (
-        "Olá! Bem-vindo ao Bot de Pedidos do CLOUD FILMES\n\n"
-        "Para solicitar o um conteúdo para o ser adicionado no app CLOUD FILMES "
-        "basta usar o comando /pedido nome do Filme ou Série\n\n"
-        "Exemplo: ` /pedido Homem-Aranha (2002) ` ou ` /pedido Stranger Things `"
-    )
-    bot.reply_to(message, texto_start, parse_mode="Markdown")
-
-# --- COMANDO PEDIDO ---
-@bot.message_handler(commands=['pedido'])
-def fazer_pedido(message):
-    entrada = message.text.replace('/pedido', '').strip()
-    
-    # Identifica o usuário (Pega o nome real mesmo sendo o dono do grupo)
-    usuario_id = message.from_user.id
-    if message.from_user.username:
-        user_ref = f"@{message.from_user.username}"
-    else:
-        user_ref = message.from_user.first_name
-
-    if entrada:
-        # Extrai o ano se houver (ex: 2025)
-        ano_digitado = re.search(r'\d{4}', entrada)
-        ano_alvo = ano_digitado.group() if ano_digitado else None
-        
-        # Limpa o nome para a busca (remove ano e parênteses)
-        nome_busca = re.sub(r'\(.*?\d{4}.*?\)', '', entrada).strip()
-        nome_busca = re.sub(r'\d{4}', '', nome_busca).strip()
-
+# --- FUNÇÃO INLINE (A JANELINHA POPUP) ---
+@bot.inline_handler(lambda query: len(query.query) > 2)
+def query_text(inline_query):
+    try:
+        nome_busca = inline_query.query
         url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_KEY}&query={nome_busca}&language=pt-BR"
-        
-        try:
-            res = requests.get(url).json()
-            resultados = res.get('results', [])
+        res = requests.get(url).json()
+        resultados = res.get('results', [])[:15] # Mostra até 15 resultados na janela
+
+        res_inline = []
+        for i, item in enumerate(resultados):
+            titulo = item.get('title') or item.get('name')
+            data = item.get('release_date') or item.get('first_air_date') or "----"
+            ano = data[:4]
+            tipo = "🎬 Filme" if item.get('media_type') == 'movie' else "📺 Série"
             
-            if resultados:
-                item_escolhido = None
-                
-                # Busca de Precisão por Ano
-                if ano_alvo:
-                    for r in resultados:
-                        data = r.get('release_date') or r.get('first_air_date') or ""
-                        if data.startswith(ano_alvo):
-                            item_escolhido = r
-                            break
-                
-                if not item_escolhido:
-                    item_escolhido = resultados[0]
-
-                titulo = item_escolhido.get('title') or item_escolhido.get('name')
-                data_lanc = item_escolhido.get('release_date') or item_escolhido.get('first_air_date') or "----"
-                ano = data_lanc[:4]
-                tipo = "🎬 Filme" if item_escolhido.get('media_type') == 'movie' else "📺 Série"
-                sinopse = item_escolhido.get('overview', 'Sinopse não disponível.')
-                
-                # Imagem Backdrop
-                img_path = item_escolhido.get('backdrop_path') or item_escolhido.get('poster_path')
-                img_url = f"https://image.tmdb.org/t/p/w780{img_path}" if img_path else None
-
-                # 1. Resposta no Grupo
-                texto_confirmacao = (
-                    f"✅ **Pedido Recebido!**\n\n"
-                    f"{tipo}: **{titulo} ({ano})**\n\n"
-                    f"🚀 Nossa equipe foi notificada e em breve este conteúdo será adicionado ao **App CLOUD FILMES**!\n\n"
-                    f"⚠️ *Limpando chat em 30s...*"
+            # Imagem que aparece na janelinha (Poster pequeno)
+            thumb = f"https://image.tmdb.org/t/p/w92{item.get('poster_path')}" if item.get('poster_path') else None
+            
+            # Monta o card da janelinha
+            r = types.InlineQueryResultArticle(
+                id=str(i),
+                title=f"{titulo} ({ano})",
+                description=f"{tipo} - Clique para pedir",
+                thumbnail_url=thumb,
+                input_message_content=types.InputTextMessageContent(
+                    message_text=(
+                        f"✅ **NOVO PEDIDO: CLOUD FILMES**\n\n"
+                        f"📌 **Título:** {titulo}\n"
+                        f"📅 **Ano:** {ano}\n"
+                        f"📂 **Tipo:** {tipo}\n\n"
+                        f"🚀 *Solicitação enviada! Analisaremos em breve.*"
+                    ),
+                    parse_mode="Markdown"
                 )
-                msg_bot = bot.reply_to(message, texto_confirmacao, parse_mode="Markdown")
-                
-                # 2. Detalhes para o seu PRIVADO (Com espaços e imagem)
-                texto_privado = (
-                    f"🍿 **SOLICITAÇÃO PARA O APP**\n\n"
-                    f"📂 **Tipo:** {tipo}\n\n"
-                    f"📌 **Título:** {titulo}\n\n"
-                    f"📅 **Ano:** {ano}\n\n"
-                    f"📝 **Sinopse:** {sinopse}\n\n"
-                    f"👤 **User:** {user_ref}\n\n"
-                    f"🆔 **ID:** `{usuario_id}`"
-                )
-                
-                if img_url:
-                    bot.send_photo(MEU_ID, img_url, caption=texto_privado, parse_mode="Markdown")
-                else:
-                    bot.send_message(MEU_ID, texto_privado, parse_mode="Markdown")
+            )
+            res_inline.append(r)
+        
+        bot.answer_inline_query(inline_query.id, res_inline, cache_time=1)
+    except Exception as e:
+        print(f"Erro Inline: {e}")
 
-                # 3. Limpeza Automática
-                time.sleep(30)
-                try:
-                    bot.delete_message(message.chat.id, message.message_id)
-                    bot.delete_message(message.chat.id, msg_bot.message_id)
-                except: pass
-            else:
-                msg_erro = bot.reply_to(message, "🔍 **Título não localizado.**\n\nCertifique-se de que o nome está correto ou tente buscar sem o ano.")
-                time.sleep(15)
-                try:
-                    bot.delete_message(message.chat.id, message.message_id)
-                    bot.delete_message(message.chat.id, msg_erro.message_id)
-                except: pass
-        except: pass
-    else:
-        # Comando de ajuda sem o link azul clicável
-        msg_help = bot.reply_to(message, "💡 **Como pedir:**\nUse ` /pedido ` seguido do nome.\nExemplo: ` /pedido Batman (2022) `", parse_mode="Markdown")
-        time.sleep(15)
-        try:
-            bot.delete_message(message.chat.id, message.message_id)
-            bot.delete_message(message.chat.id, msg_help.message_id)
-        except: pass
+# --- NOTIFICAÇÃO NO SEU PRIVADO ---
+@bot.message_handler(func=lambda m: "NOVO PEDIDO: CLOUD FILMES" in (m.text or ""))
+def notificar_dono(message):
+    user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
+    
+    # Repassa o pedido completo para o seu privado com a ID do usuário
+    bot.send_message(MEU_ID, 
+        f"🍿 **PEDIDO RECEBIDO (INLINE)**\n\n"
+        f"{message.text}\n\n"
+        f"👤 **Solicitado por:** {user}\n"
+        f"🆔 **ID:** `{message.from_user.id}`", 
+        parse_mode="Markdown")
+    
+    # Opcional: Apaga a confirmação do grupo depois de 1 minuto
+    time.sleep(60)
+    try:
+        bot.delete_message(message.chat.id, message.message_id)
+    except: pass
+
+# Comando Start normal caso alguém abra o bot
+@bot.message_handler(commands=['start'])
+def welcome(message):
+    bot.reply_to(message, "Para pedir, digite `@NomeDoSeuBot` seguido do filme em qualquer chat!")
 
 if __name__ == "__main__":
     t = Thread(target=run)
     t.start()
     bot.infinity_polling()
+            
