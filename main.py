@@ -26,7 +26,7 @@ bot = telebot.TeleBot(TOKEN)
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     texto_start = (
-        "✨ **Bem-vindo ao CLOUD FILMES!**\n\n"
+        "✨ **Bem-vindo(a) ao CLOUD FILMES - PEDIDOS!**\n\n"
         "Para solicitar um conteúdo, basta digitar `@` seguido do nome do nosso bot "
         "e o nome do filme ou série no campo de Mensagem.\n\n"
         "Exemplo: `@CLOUDFILMES_PEDIDOS_BOT Batman`"
