@@ -6,30 +6,41 @@ from telebot import types
 from flask import Flask
 from threading import Thread
 
-# --- SERVIDOR WEB ---
+# --- SERVIDOR WEB (PARA MANTER VIVO NO RENDER) ---
 app = Flask('')
 @app.route('/')
-def home(): return "Bot Cloud Filmes Inline Ativo!"
+def home(): return "Servidor Cloud Filmes Online"
 
 def run():
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
 
 # --- CONFIGURAÇÃO ---
-TOKEN = '8692317223:AAFE76kBVYKkt85qv1wyR_deawLBnShwT0Q'
-TMDB_KEY = 'a169d710b2eca204f9db290256828d05'
-MEU_ID = '6032657635'
+TOKEN = 'SEU_TOKEN_AQUI'
+TMDB_KEY = 'SUA_CHAVE_TMDB_AQUI'
+MEU_ID = 'SEU_ID_AQUI'
 
 bot = telebot.TeleBot(TOKEN)
 
-# --- FUNÇÃO INLINE (A JANELINHA POPUP) ---
+# --- COMANDO START (ADICIONADO) ---
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    texto_start = (
+        "✨ **Bem-vindo ao CLOUD FILMES!**\n\n"
+        "Para solicitar um conteúdo, basta digitar `@` seguido do nome do nosso bot "
+        "e o nome do filme no campo de mensagem.\n\n"
+        "Exemplo: `@nome_do_seu_bot Batman`"
+    )
+    bot.reply_to(message, texto_start, parse_mode="Markdown")
+
+# --- MODO INLINE (A JANELINHA PROFISSIONAL) ---
 @bot.inline_handler(lambda query: len(query.query) > 2)
 def query_text(inline_query):
     try:
         nome_busca = inline_query.query
         url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_KEY}&query={nome_busca}&language=pt-BR"
         res = requests.get(url).json()
-        resultados = res.get('results', [])[:15] # Mostra até 15 resultados na janela
+        resultados = res.get('results', [])[:15]
 
         res_inline = []
         for i, item in enumerate(resultados):
@@ -38,23 +49,16 @@ def query_text(inline_query):
             ano = data[:4]
             tipo = "🎬 Filme" if item.get('media_type') == 'movie' else "📺 Série"
             
-            # Imagem que aparece na janelinha (Poster pequeno)
             thumb = f"https://image.tmdb.org/t/p/w92{item.get('poster_path')}" if item.get('poster_path') else None
             
-            # Monta o card da janelinha
             r = types.InlineQueryResultArticle(
                 id=str(i),
                 title=f"{titulo} ({ano})",
-                description=f"{tipo} - Clique para pedir",
+                description=f"{tipo} - Toque para solicitar",
                 thumbnail_url=thumb,
                 input_message_content=types.InputTextMessageContent(
-                    message_text=(
-                        f"✅ **NOVO PEDIDO: CLOUD FILMES**\n\n"
-                        f"📌 **Título:** {titulo}\n"
-                        f"📅 **Ano:** {ano}\n"
-                        f"📂 **Tipo:** {tipo}\n\n"
-                        f"🚀 *Solicitação enviada! Analisaremos em breve.*"
-                    ),
+                    # NOVA MENSAGEM QUE VOCÊ PEDIU PARA O GRUPO
+                    message_text=f"🚀 **Solicitação recebida! Seu pedido vai ser adicionado em breve no aplicativo CLOUD FILMES.**\n\n_{titulo} ({ano})_",
                     parse_mode="Markdown"
                 )
             )
@@ -64,29 +68,58 @@ def query_text(inline_query):
     except Exception as e:
         print(f"Erro Inline: {e}")
 
-# --- NOTIFICAÇÃO NO SEU PRIVADO ---
-@bot.message_handler(func=lambda m: "NOVO PEDIDO: CLOUD FILMES" in (m.text or ""))
-def notificar_dono(message):
-    user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
-    
-    # Repassa o pedido completo para o seu privado com a ID do usuário
-    bot.send_message(MEU_ID, 
-        f"🍿 **PEDIDO RECEBIDO (INLINE)**\n\n"
-        f"{message.text}\n\n"
-        f"👤 **Solicitado por:** {user}\n"
-        f"🆔 **ID:** `{message.from_user.id}`", 
-        parse_mode="Markdown")
-    
-    # Opcional: Apaga a confirmação do grupo depois de 1 minuto
-    time.sleep(60)
+# --- PROCESSAMENTO DO PEDIDO E NOTIFICAÇÃO NO SEU PRIVADO ---
+@bot.message_handler(func=lambda m: "Solicitação recebida!" in (m.text or ""))
+def processar_pedido_profissional(message):
     try:
-        bot.delete_message(message.chat.id, message.message_id)
-    except: pass
+        # Extrai o título da mensagem curta
+        conteudo = message.text.split('\n\n')[-1].strip('_')
+        nome_limpo = conteudo.split(' (')[0]
+        
+        # Busca detalhes completos para o seu relatório (com Backdrop)
+        url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_KEY}&query={nome_limpo}&language=pt-BR"
+        res_tmdb = requests.get(url).json().get('results', [])
+        
+        if res_tmdb:
+            detalhes = res_tmdb[0]
+            titulo = detalhes.get('title') or detalhes.get('name')
+            data = detalhes.get('release_date') or detalhes.get('first_air_date') or "----"
+            ano = data[:4]
+            tipo = "🎬 Filme" if detalhes.get('media_type') == 'movie' else "📺 Série"
+            sinopse = detalhes.get('overview', 'Sinopse não disponível.')
+            
+            # Backdrop (Imagem de fundo larga)
+            img_path = detalhes.get('backdrop_path') or detalhes.get('poster_path')
+            img_url = f"https://image.tmdb.org/t/p/w780{img_path}" if img_path else None
 
-# Comando Start normal caso alguém abra o bot
-@bot.message_handler(commands=['start'])
-def welcome(message):
-    bot.reply_to(message, "Para pedir, digite `@NomeDoSeuBot` seguido do filme em qualquer chat!")
+            # Identificação do Usuário
+            user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
+            
+            # --- RELATÓRIO PARA O SEU PRIVADO (ORGANIZADO) ---
+            texto_admin = (
+                f"🍿 **SISTEMA DE SOLICITAÇÃO - CLOUD FILMES**\n\n"
+                f"📂 **Tipo:** {tipo}\n\n"
+                f"📌 **Título:** {titulo}\n\n"
+                f"📅 **Ano de Lançamento:** {ano}\n\n"
+                f"📝 **Sinopse:** {sinopse}\n\n"
+                f"👤 **Solicitante:** {user}\n\n"
+                f"🆔 **ID do Usuário:** `{message.from_user.id}`"
+            )
+
+            # Envia para você com a imagem Backdrop
+            if img_url:
+                bot.send_photo(MEU_ID, img_url, caption=texto_admin, parse_mode="Markdown")
+            else:
+                bot.send_message(MEU_ID, texto_admin, parse_mode="Markdown")
+
+        # --- FAXINA AUTOMÁTICA (30 SEGUNDOS NO GRUPO) ---
+        time.sleep(30)
+        try:
+            bot.delete_message(message.chat.id, message.message_id)
+        except: pass
+
+    except Exception as e:
+        print(f"Erro ao processar: {e}")
 
 if __name__ == "__main__":
     t = Thread(target=run)
