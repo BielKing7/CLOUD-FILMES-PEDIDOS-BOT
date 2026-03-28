@@ -16,9 +16,9 @@ def run():
     app.run(host='0.0.0.0', port=port)
 
 # --- CONFIGURAÇÃO ---
-TOKEN = 'SEU_TOKEN_AQUI'
-TMDB_KEY = 'SUA_CHAVE_TMDB_AQUI'
-MEU_ID = 'SEU_ID_AQUI'
+TOKEN = '8692317223:AAFE76kBVYKkt85qv1wyR_deawLBnShwT0Q'
+TMDB_KEY = 'a169d710b2eca204f9db290256828d05'
+MEU_ID = '6032657635'
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -28,8 +28,8 @@ def send_welcome(message):
     texto_start = (
         "✨ **Bem-vindo ao CLOUD FILMES!**\n\n"
         "Para solicitar um conteúdo, basta digitar `@` seguido do nome do nosso bot "
-        "e o nome do filme no campo de mensagem.\n\n"
-        "Exemplo: `@nome_do_seu_bot Batman`"
+        "e o nome do filme ou série no campo de Mensagem.\n\n"
+        "Exemplo: `@CLOUDFILMES_PEDIDOS_BOT Batman`"
     )
     bot.reply_to(message, texto_start, parse_mode="Markdown")
 
