@@ -21,16 +21,16 @@ def run():
 TOKEN = '8692317223:AAFE76kBVYKkt85qv1wyR_deawLBnShwT0Q'
 TMDB_KEY = 'a169d710b2eca204f9db290256828d05'
 MEU_ID = '6032657635'
-ID_TOPICO_PEDIDOS = 5 #
+ID_TOPICO_PEDIDOS = 5 
 
 bot = telebot.TeleBot(TOKEN)
 
-# --- COMANDO START CORRIGIDO ---
+# --- COMANDO START ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = types.InlineKeyboardMarkup()
     
-    # Removendo emojis complexos do parâmetro 'text' para evitar erro de parse
+    # Botão simplificado para evitar erros de renderização
     botao_busca = types.InlineKeyboardButton(
         text="Procurar Filme ou Serie", 
         switch_inline_query_current_chat=""
@@ -45,16 +45,16 @@ def send_welcome(message):
     )
     
     try:
-        # Usando send_message diretamente para garantir maior compatibilidade
+        # Enviando mensagem simples para testar a resposta
         bot.send_message(
             message.chat.id, 
             texto_start, 
             parse_mode="Markdown", 
             reply_markup=markup,
-            message_thread_id=message.message_thread_id # Mantém no tópico atual
+            message_thread_id=message.message_thread_id
         )
     except Exception as e:
-        print(f"Erro no Start: {e}")
+        print(f"Erro ao responder Start: {e}")
 
 # --- MODO INLINE ---
 @bot.inline_handler(lambda query: len(query.query) > 2)
@@ -93,7 +93,7 @@ def query_text(inline_query):
 @bot.message_handler(func=lambda m: m.text and "Solicitação recebida!" in m.text)
 def processar_pedido_profissional(message):
     try:
-        # Filtro de Tópico
+        # Filtro de Tópico 5
         if message.message_thread_id != ID_TOPICO_PEDIDOS:
             return
 
@@ -113,20 +113,15 @@ def processar_pedido_profissional(message):
             ano = data[:4]
             tipo = "🎬 Filme" if detalhes.get('media_type') == 'movie' else "📺 Série"
             sinopse = detalhes.get('overview', 'Sinopse não disponível.')
-            
             img_path = detalhes.get('backdrop_path') or detalhes.get('poster_path')
             img_url = f"https://image.tmdb.org/t/p/w780{img_path}" if img_path else None
-
             user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
             
             texto_admin = (
                 f"🍿 **SISTEMA DE SOLICITAÇÃO - CLOUD FILMES**\n\n"
                 f"📂 **Tipo:** {tipo}\n\n"
                 f"📌 **Título:** {titulo}\n\n"
-                f"📅 **Ano de Lançamento:** {ano}\n\n"
-                f"📝 **Sinopse:** {sinopse}\n\n"
-                f"👤 **Solicitante:** {user}\n\n"
-                f"🆔 **ID do Usuário:** `{message.from_user.id}`"
+                f"👤 **Solicitante:** {user}"
             )
 
             if img_url:
@@ -134,17 +129,18 @@ def processar_pedido_profissional(message):
             else:
                 bot.send_message(MEU_ID, texto_admin, parse_mode="Markdown")
 
-        time.sleep(30) # Tempo menor para evitar que o Render mate o processo
+        time.sleep(5)
         try:
             bot.delete_message(message.chat.id, message.message_id)
-        except:
-            pass
-
+        except: pass
     except Exception as e:
         print(f"Erro ao processar: {e}")
 
 if __name__ == "__main__":
     t = Thread(target=run)
     t.start()
+    
+    # --- O SEGREDO ESTÁ AQUI: LIMPAR WEBHOOKS ANTIGOS ---
+    bot.remove_webhook()
+    print("Bot online e aguardando mensagens...")
     bot.infinity_polling()
-        
