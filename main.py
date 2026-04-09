@@ -8,8 +8,10 @@ from threading import Thread
 
 # --- SERVIDOR WEB (PARA MANTER VIVO NO RENDER) ---
 app = Flask('')
-@bot.route('/')
-def home(): return "Servidor Cloud Filmes Online"
+
+@app.route('/')
+def home(): 
+    return "Servidor Cloud Filmes Online"
 
 def run():
     port = int(os.environ.get('PORT', 8080))
@@ -26,23 +28,28 @@ bot = telebot.TeleBot(TOKEN)
 # --- COMANDO START COM BOTÃO TRANSPARENTE ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    # Criando o teclado transparente (Inline Keyboard)
     markup = types.InlineKeyboardMarkup()
-    # Abre a busca direto no chat atual
+    
+    # O botão que você viu: ele coloca o @ do bot e espera a pesquisa
     botao_busca = types.InlineKeyboardButton(
         text="🔍 Procurar Filme ou Série", 
         switch_inline_query_current_chat=""
     )
+    
     markup.add(botao_busca)
 
     texto_start = (
         "✨ **Bem-vindo(a) ao CLOUD FILMES - PEDIDOS!**\n\n"
-        "Para fazer um pedido, clique no botão abaixo e digite o nome do conteúdo.\n\n"
+        "Para fazer um pedido, agora basta clicar no botão abaixo e digitar o nome do conteúdo.\n\n"
         "⚠️ **Atenção:** Use este botão apenas dentro do tópico de Pedidos!"
     )
     
     try:
+        # Tenta responder citando a mensagem
         bot.reply_to(message, texto_start, parse_mode="Markdown", reply_markup=markup)
     except:
+        # Se falhar (erro de Bad Request), envia mensagem direta
         bot.send_message(message.chat.id, texto_start, parse_mode="Markdown", reply_markup=markup)
 
 # --- MODO INLINE (A JANELA DE RESULTADOS) ---
@@ -60,6 +67,7 @@ def query_text(inline_query):
             data = item.get('release_date') or item.get('first_air_date') or "----"
             ano = data[:4]
             tipo = "🎬 Filme" if item.get('media_type') == 'movie' else "📺 Série"
+            
             thumb = f"https://image.tmdb.org/t/p/w92{item.get('poster_path')}" if item.get('poster_path') else None
             
             r = types.InlineQueryResultArticle(
@@ -130,6 +138,7 @@ def processar_pedido_profissional(message):
         try:
             bot.delete_message(message.chat.id, message.message_id)
         except Exception as e:
+            # Apenas registra o erro mas não para o bot
             print(f"Não foi possível deletar a mensagem: {e}")
 
     except Exception as e:
@@ -139,4 +148,4 @@ if __name__ == "__main__":
     t = Thread(target=run)
     t.start()
     bot.infinity_polling()
-                     
+            
