@@ -25,36 +25,37 @@ ID_TOPICO_PEDIDOS = 5
 
 bot = telebot.TeleBot(TOKEN)
 
-# --- COMANDO START ---
+# --- COMANDO START (CORRIGIDO PARA PRIVADO E GRUPO) ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = types.InlineKeyboardMarkup()
-    
-    # Botão simplificado para evitar erros de renderização
     botao_busca = types.InlineKeyboardButton(
         text="Procurar Filme ou Serie", 
         switch_inline_query_current_chat=""
     )
-    
     markup.add(botao_busca)
 
     texto_start = (
         "✨ **Bem-vindo(a) ao CLOUD FILMES - PEDIDOS!**\n\n"
         "Para fazer um pedido, clique no botão abaixo e digite o nome do conteúdo.\n\n"
-        "⚠️ **Atenção:** Use este botão apenas dentro do tópico de Pedidos!"
+        "⚠️ **Atenção:** No grupo, use este botão apenas no tópico de Pedidos!"
     )
     
     try:
-        # Enviando mensagem simples para testar a resposta
-        bot.send_message(
-            message.chat.id, 
-            texto_start, 
-            parse_mode="Markdown", 
-            reply_markup=markup,
-            message_thread_id=message.message_thread_id
-        )
+        # Se a mensagem vier de um grupo (supergroup), enviamos com o ID do tópico
+        if message.chat.type in ['group', 'supergroup']:
+            bot.send_message(
+                message.chat.id, 
+                texto_start, 
+                parse_mode="Markdown", 
+                reply_markup=markup,
+                message_thread_id=message.message_thread_id
+            )
+        else:
+            # Se for no privado, envia normal (como no seu primeiro código)
+            bot.send_message(message.chat.id, texto_start, parse_mode="Markdown", reply_markup=markup)
     except Exception as e:
-        print(f"Erro ao responder Start: {e}")
+        print(f"Erro no Start: {e}")
 
 # --- MODO INLINE ---
 @bot.inline_handler(lambda query: len(query.query) > 2)
@@ -70,7 +71,7 @@ def query_text(inline_query):
             titulo = item.get('title') or item.get('name')
             data = item.get('release_date') or item.get('first_air_date') or "----"
             ano = data[:4]
-            tipo = "Filme" if item.get('media_type') == 'movie' else "Serie"
+            tipo = "🎬 Filme" if item.get('media_type') == 'movie' else "📺 Série"
             thumb = f"https://image.tmdb.org/t/p/w92{item.get('poster_path')}" if item.get('poster_path') else None
             
             r = types.InlineQueryResultArticle(
@@ -84,17 +85,16 @@ def query_text(inline_query):
                 )
             )
             res_inline.append(r)
-        
         bot.answer_inline_query(inline_query.id, res_inline, cache_time=1)
     except Exception as e:
         print(f"Erro Inline: {e}")
 
-# --- PROCESSAMENTO DO PEDIDO ---
+# --- PROCESSAMENTO DO PEDIDO (COM TRAVA DE TÓPICO) ---
 @bot.message_handler(func=lambda m: m.text and "Solicitação recebida!" in m.text)
 def processar_pedido_profissional(message):
     try:
-        # Filtro de Tópico 5
-        if message.message_thread_id != ID_TOPICO_PEDIDOS:
+        # Só processa se for no tópico 5 (se estiver em um grupo)
+        if message.chat.type in ['group', 'supergroup'] and message.message_thread_id != ID_TOPICO_PEDIDOS:
             return
 
         partes = message.text.split('\n\n')
@@ -121,6 +121,7 @@ def processar_pedido_profissional(message):
                 f"🍿 **SISTEMA DE SOLICITAÇÃO - CLOUD FILMES**\n\n"
                 f"📂 **Tipo:** {tipo}\n\n"
                 f"📌 **Título:** {titulo}\n\n"
+                f"📅 **Ano:** {ano}\n\n"
                 f"👤 **Solicitante:** {user}"
             )
 
@@ -129,7 +130,8 @@ def processar_pedido_profissional(message):
             else:
                 bot.send_message(MEU_ID, texto_admin, parse_mode="Markdown")
 
-        time.sleep(5)
+        # Faxina automática
+        time.sleep(20)
         try:
             bot.delete_message(message.chat.id, message.message_id)
         except: pass
@@ -139,8 +141,6 @@ def processar_pedido_profissional(message):
 if __name__ == "__main__":
     t = Thread(target=run)
     t.start()
-    
-    # --- O SEGREDO ESTÁ AQUI: LIMPAR WEBHOOKS ANTIGOS ---
     bot.remove_webhook()
-    print("Bot online e aguardando mensagens...")
+    print("Bot online!")
     bot.infinity_polling()
