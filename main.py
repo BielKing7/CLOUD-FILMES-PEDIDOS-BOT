@@ -8,7 +8,7 @@ from threading import Thread
 
 # --- SERVIDOR WEB (PARA MANTER VIVO NO RENDER) ---
 app = Flask('')
-@app.route('/')
+@bot.route('/')
 def home(): return "Servidor Cloud Filmes Online"
 
 def run():
@@ -19,21 +19,33 @@ def run():
 TOKEN = '8692317223:AAFE76kBVYKkt85qv1wyR_deawLBnShwT0Q'
 TMDB_KEY = 'a169d710b2eca204f9db290256828d05'
 MEU_ID = '6032657635'
+ID_TOPICO_PEDIDOS = 5  # <--- TRAVA DEFINIDA PARA O TÓPICO 'PEDIDOS'
 
 bot = telebot.TeleBot(TOKEN)
 
-# --- COMANDO START (ADICIONADO) ---
+# --- COMANDO START COM BOTÃO TRANSPARENTE ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    markup = types.InlineKeyboardMarkup()
+    # Abre a busca direto no chat atual
+    botao_busca = types.InlineKeyboardButton(
+        text="🔍 Procurar Filme ou Série", 
+        switch_inline_query_current_chat=""
+    )
+    markup.add(botao_busca)
+
     texto_start = (
         "✨ **Bem-vindo(a) ao CLOUD FILMES - PEDIDOS!**\n\n"
-        "Para solicitar um conteúdo, basta digitar `@` seguido do nome do nosso bot "
-        "e o nome do filme ou série no campo de Mensagem.\n\n"
-        "Exemplo: `@CLOUDFILMES_PEDIDOS_BOT Batman`"
+        "Para fazer um pedido, clique no botão abaixo e digite o nome do conteúdo.\n\n"
+        "⚠️ **Atenção:** Use este botão apenas dentro do tópico de Pedidos!"
     )
-    bot.reply_to(message, texto_start, parse_mode="Markdown")
+    
+    try:
+        bot.reply_to(message, texto_start, parse_mode="Markdown", reply_markup=markup)
+    except:
+        bot.send_message(message.chat.id, texto_start, parse_mode="Markdown", reply_markup=markup)
 
-# --- MODO INLINE (A JANELINHA PROFISSIONAL) ---
+# --- MODO INLINE (A JANELA DE RESULTADOS) ---
 @bot.inline_handler(lambda query: len(query.query) > 2)
 def query_text(inline_query):
     try:
@@ -48,7 +60,6 @@ def query_text(inline_query):
             data = item.get('release_date') or item.get('first_air_date') or "----"
             ano = data[:4]
             tipo = "🎬 Filme" if item.get('media_type') == 'movie' else "📺 Série"
-            
             thumb = f"https://image.tmdb.org/t/p/w92{item.get('poster_path')}" if item.get('poster_path') else None
             
             r = types.InlineQueryResultArticle(
@@ -57,7 +68,6 @@ def query_text(inline_query):
                 description=f"{tipo} - Toque para solicitar",
                 thumbnail_url=thumb,
                 input_message_content=types.InputTextMessageContent(
-                    # NOVA MENSAGEM QUE VOCÊ PEDIU PARA O GRUPO
                     message_text=f"🚀 **Solicitação recebida! Seu pedido vai ser adicionado em breve no aplicativo CLOUD FILMES.**\n\n_{titulo} ({ano})_",
                     parse_mode="Markdown"
                 )
@@ -68,15 +78,22 @@ def query_text(inline_query):
     except Exception as e:
         print(f"Erro Inline: {e}")
 
-# --- PROCESSAMENTO DO PEDIDO E NOTIFICAÇÃO NO SEU PRIVADO ---
-@bot.message_handler(func=lambda m: "Solicitação recebida!" in (m.text or ""))
+# --- PROCESSAMENTO DO PEDIDO COM FILTRO DE TÓPICO ---
+@bot.message_handler(func=lambda m: m.text and "Solicitação recebida!" in m.text)
 def processar_pedido_profissional(message):
     try:
-        # Extrai o título da mensagem curta
-        conteudo = message.text.split('\n\n')[-1].strip('_')
+        # --- FILTRO DE TÓPICO ---
+        # Se o ID do tópico for diferente de 5, o bot ignora e não envia nada para você
+        if message.message_thread_id != ID_TOPICO_PEDIDOS:
+            print(f"Ignorando pedido fora do tópico: Recebido no ID {message.message_thread_id}")
+            return
+
+        partes = message.text.split('\n\n')
+        if len(partes) < 2: return
+        
+        conteudo = partes[-1].strip('_')
         nome_limpo = conteudo.split(' (')[0]
         
-        # Busca detalhes completos para o seu relatório (com Backdrop)
         url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_KEY}&query={nome_limpo}&language=pt-BR"
         res_tmdb = requests.get(url).json().get('results', [])
         
@@ -88,14 +105,11 @@ def processar_pedido_profissional(message):
             tipo = "🎬 Filme" if detalhes.get('media_type') == 'movie' else "📺 Série"
             sinopse = detalhes.get('overview', 'Sinopse não disponível.')
             
-            # Backdrop (Imagem de fundo larga)
             img_path = detalhes.get('backdrop_path') or detalhes.get('poster_path')
             img_url = f"https://image.tmdb.org/t/p/w780{img_path}" if img_path else None
 
-            # Identificação do Usuário
             user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
             
-            # --- RELATÓRIO PARA O SEU PRIVADO (ORGANIZADO) ---
             texto_admin = (
                 f"🍿 **SISTEMA DE SOLICITAÇÃO - CLOUD FILMES**\n\n"
                 f"📂 **Tipo:** {tipo}\n\n"
@@ -106,17 +120,17 @@ def processar_pedido_profissional(message):
                 f"🆔 **ID do Usuário:** `{message.from_user.id}`"
             )
 
-            # Envia para você com a imagem Backdrop
             if img_url:
                 bot.send_photo(MEU_ID, img_url, caption=texto_admin, parse_mode="Markdown")
             else:
                 bot.send_message(MEU_ID, texto_admin, parse_mode="Markdown")
 
-        # --- FAXINA AUTOMÁTICA (30 SEGUNDOS NO GRUPO) ---
+        # --- FAXINA AUTOMÁTICA ---
         time.sleep(30)
         try:
             bot.delete_message(message.chat.id, message.message_id)
-        except: pass
+        except Exception as e:
+            print(f"Não foi possível deletar a mensagem: {e}")
 
     except Exception as e:
         print(f"Erro ao processar: {e}")
@@ -125,4 +139,4 @@ if __name__ == "__main__":
     t = Thread(target=run)
     t.start()
     bot.infinity_polling()
-            
+                     
