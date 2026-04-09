@@ -6,7 +6,7 @@ from telebot import types
 from flask import Flask
 from threading import Thread
 
-# --- SERVIDOR WEB (PARA MANTER VIVO NO RENDER) ---
+# --- SERVIDOR WEB ---
 app = Flask('')
 
 @app.route('/')
@@ -21,19 +21,18 @@ def run():
 TOKEN = '8692317223:AAFE76kBVYKkt85qv1wyR_deawLBnShwT0Q'
 TMDB_KEY = 'a169d710b2eca204f9db290256828d05'
 MEU_ID = '6032657635'
-ID_TOPICO_PEDIDOS = 5  # <--- TRAVA DEFINIDA PARA O TÓPICO 'PEDIDOS'
+ID_TOPICO_PEDIDOS = 5 #
 
 bot = telebot.TeleBot(TOKEN)
 
-# --- COMANDO START COM BOTÃO TRANSPARENTE ---
+# --- COMANDO START CORRIGIDO ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    # Criando o teclado transparente (Inline Keyboard)
     markup = types.InlineKeyboardMarkup()
     
-    # O botão que você viu: ele coloca o @ do bot e espera a pesquisa
+    # Removendo emojis complexos do parâmetro 'text' para evitar erro de parse
     botao_busca = types.InlineKeyboardButton(
-        text="🔍 Procurar Filme ou Série", 
+        text="Procurar Filme ou Serie", 
         switch_inline_query_current_chat=""
     )
     
@@ -41,18 +40,23 @@ def send_welcome(message):
 
     texto_start = (
         "✨ **Bem-vindo(a) ao CLOUD FILMES - PEDIDOS!**\n\n"
-        "Para fazer um pedido, agora basta clicar no botão abaixo e digitar o nome do conteúdo.\n\n"
+        "Para fazer um pedido, clique no botão abaixo e digite o nome do conteúdo.\n\n"
         "⚠️ **Atenção:** Use este botão apenas dentro do tópico de Pedidos!"
     )
     
     try:
-        # Tenta responder citando a mensagem
-        bot.reply_to(message, texto_start, parse_mode="Markdown", reply_markup=markup)
-    except:
-        # Se falhar (erro de Bad Request), envia mensagem direta
-        bot.send_message(message.chat.id, texto_start, parse_mode="Markdown", reply_markup=markup)
+        # Usando send_message diretamente para garantir maior compatibilidade
+        bot.send_message(
+            message.chat.id, 
+            texto_start, 
+            parse_mode="Markdown", 
+            reply_markup=markup,
+            message_thread_id=message.message_thread_id # Mantém no tópico atual
+        )
+    except Exception as e:
+        print(f"Erro no Start: {e}")
 
-# --- MODO INLINE (A JANELA DE RESULTADOS) ---
+# --- MODO INLINE ---
 @bot.inline_handler(lambda query: len(query.query) > 2)
 def query_text(inline_query):
     try:
@@ -66,8 +70,7 @@ def query_text(inline_query):
             titulo = item.get('title') or item.get('name')
             data = item.get('release_date') or item.get('first_air_date') or "----"
             ano = data[:4]
-            tipo = "🎬 Filme" if item.get('media_type') == 'movie' else "📺 Série"
-            
+            tipo = "Filme" if item.get('media_type') == 'movie' else "Serie"
             thumb = f"https://image.tmdb.org/t/p/w92{item.get('poster_path')}" if item.get('poster_path') else None
             
             r = types.InlineQueryResultArticle(
@@ -86,14 +89,12 @@ def query_text(inline_query):
     except Exception as e:
         print(f"Erro Inline: {e}")
 
-# --- PROCESSAMENTO DO PEDIDO COM FILTRO DE TÓPICO ---
+# --- PROCESSAMENTO DO PEDIDO ---
 @bot.message_handler(func=lambda m: m.text and "Solicitação recebida!" in m.text)
 def processar_pedido_profissional(message):
     try:
-        # --- FILTRO DE TÓPICO ---
-        # Se o ID do tópico for diferente de 5, o bot ignora e não envia nada para você
+        # Filtro de Tópico
         if message.message_thread_id != ID_TOPICO_PEDIDOS:
-            print(f"Ignorando pedido fora do tópico: Recebido no ID {message.message_thread_id}")
             return
 
         partes = message.text.split('\n\n')
@@ -133,13 +134,11 @@ def processar_pedido_profissional(message):
             else:
                 bot.send_message(MEU_ID, texto_admin, parse_mode="Markdown")
 
-        # --- FAXINA AUTOMÁTICA ---
-        time.sleep(30)
+        time.sleep(30) # Tempo menor para evitar que o Render mate o processo
         try:
             bot.delete_message(message.chat.id, message.message_id)
-        except Exception as e:
-            # Apenas registra o erro mas não para o bot
-            print(f"Não foi possível deletar a mensagem: {e}")
+        except:
+            pass
 
     except Exception as e:
         print(f"Erro ao processar: {e}")
@@ -148,4 +147,4 @@ if __name__ == "__main__":
     t = Thread(target=run)
     t.start()
     bot.infinity_polling()
-            
+        
